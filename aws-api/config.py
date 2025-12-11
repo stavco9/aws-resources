@@ -1,3 +1,6 @@
+# Special resource group name mapping.
+# This mapping is used to convert the resource group name in the ARN to the Cloud Control API type name format.
+# details in https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html
 special_resource_group_name_mapping = {
     'ec2': 'EC2',
     's3': 'S3',

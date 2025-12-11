@@ -56,7 +56,7 @@ Ensure your AWS credentials are configured either via:
 
 ## Configuration
 
-Edit `config.py` to customize which resources are included in the export:
+Edit `config.py` to customize resource filtering and mapping behavior:
 
 ### Whitelist Resource Types
 
@@ -91,6 +91,93 @@ blacklist_resource_types = [
 
 **Note**: Blacklist takes precedence over whitelist. If a resource type is in both lists, it will be excluded.
 
+### Resource Name Mappings
+
+The script maps resource names from ARN format to Cloud Control API TypeName format. This mapping is essential because:
+- Resource Explorer returns resources in ARN format (e.g., `ec2:instance`, `dynamodb:table`)
+- Cloud Control API expects CloudFormation resource type format (e.g., `AWS::EC2::Instance`, `AWS::DynamoDB::Table`)
+
+#### Adding New Mappings
+
+If you encounter WARNING messages like:
+```
+Type AWS::<Service>::<Resource> not found for resource
+```
+
+This indicates that a resource type mapping is missing. To fix this:
+
+1. **Identify the resource type** from the warning message and the ARN
+2. **Check the Cloud Control API documentation** for the correct TypeName format: [Supported Resources](https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html)
+3. **Add the mapping** to `special_resource_group_name_mapping` in `config.py`:
+
+```python
+special_resource_group_name_mapping = {
+    # Existing mappings...
+    'your-resource-group-name': 'YourResourceGroupName',  # Add your mapping here
+}
+```
+
+**Example**: If you see `Type AWS::EC2::ElasticIp not found`, you would add:
+```python
+special_resource_group_name_mapping = {
+    # ... existing mappings
+    'elastic-ip': 'EIP',  # Maps 'ec2:elastic-ip' to 'AWS::EC2::EIP'
+}
+```
+
+The mapping converts the resource group name from the ARN (lowercase, hyphenated) to the Cloud Control API format (PascalCase).
+
+#### Service-Specific Resource Group Mappings
+
+Some services have special resource group name mappings that override the default camel case conversion:
+
+```python
+service_to_resource_group_name_mapping = {
+    'S3': 'Bucket',      # Maps 's3:bucket' to 'AWS::S3::Bucket'
+    'SQS': 'Queue'       # Maps 'sqs:queue' to 'AWS::SQS::Queue'
+}
+```
+
+### Resource Identifier Configuration
+
+The script extracts resource identifiers from ARNs differently based on service requirements:
+
+#### Default Behavior
+By default, the script extracts the resource ID from the ARN after the last slash (`/`):
+- ARN: `arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0`
+- Resource ID: `i-1234567890abcdef0`
+
+#### Services Requiring Full ARN
+Some services require the **full ARN** as the identifier. These are configured in `services_keep_service_arn`:
+
+```python
+services_keep_service_arn = [
+    'ElasticLoadBalancingV2',  # ALB/NLB require full ARN
+    'SecretsManager',           # Secrets require full ARN
+    'AppRunner',                # App Runner services require full ARN
+    'CE'                        # Cost Explorer resources require full ARN
+]
+```
+
+#### Services with Different ARN Structure
+Some services don't use the standard `arn:partition:service:region:account-id:resource-type/resource-id` format. Instead, they use:
+- `arn:partition:service:region:account-id:resource-type:resource-id` (colon separator)
+- `arn:partition:service:region:account-id:resource-id` (no resource type)
+
+These are configured in `services_not_split_by_slash`:
+
+```python
+services_not_split_by_slash = [
+    'RDS',          # Uses format: arn:aws:rds:region:account-id:db:db-instance-id
+    'S3',           # Uses format: arn:aws:s3:::bucket-name
+    'SQS',          # Uses format: arn:aws:sqs:region:account-id:queue-name
+    'ElastiCache',  # Uses colon-separated format
+    'Logs'          # CloudWatch Logs uses colon-separated format
+]
+```
+
+For these services, the resource ID is extracted from the part after the last colon (`:`) instead of the last slash.
+
 ## Usage
 
 ### Basic Syntax
@@ -109,15 +196,32 @@ python list-resources.py --region <aggregator-region> [OPTIONS]
 | `--log-level` | string | No | Log level: `INFO` (default), `DEBUG`, `WARNING`, or `ERROR` |
 | `--output-by-region` | flag | No | Export one CSV file per region |
 | `--output-by-resource-type` | flag | No | Export one CSV file per resource type |
+| `--output-json` | flag | No | Export report in JSON format (in addition to CSV) |
 
 ### Output Options
 
 The script supports flexible output grouping:
 
-- **No flags**: Single CSV file with all resources from all regions
+#### CSV Output Modes
+
+- **No flags**: Single CSV file (`report.csv`) with all resources from all regions
 - `--output-by-region`: One CSV file per region (e.g., `report_eu_central_1.csv`, `report_us_east_1.csv`)
+  - When combined with `--output-by-resource-type`: One CSV file per region AND resource type (e.g., `report_ec2_instance_eu_central_1.csv`)
+  - When used alone: One CSV file per region with all resource types combined
 - `--output-by-resource-type`: One CSV file per resource type (e.g., `report_ec2_instance.csv`, `report_s3_bucket.csv`)
-- **Both flags**: One CSV file per region AND resource type combination (e.g., `report_ec2_instance_eu_central_1.csv`)
+  - When used alone: One CSV file per resource type with all regions combined
+  - When combined with `--output-by-region`: One CSV file per region AND resource type
+
+#### JSON Output
+
+- `--output-json`: Exports a single JSON file (`report.json`) containing all resources from all regions, regardless of other output options
+  - This is in addition to CSV output (if any CSV flags are specified)
+  - If no CSV flags are specified, only JSON will be exported
+
+**Important Notes:**
+- When `--output-by-region` is used, files are generated per region as resources are processed
+- When `--output-by-region` is NOT used, all regions are combined into a single output
+- JSON output always contains all resources from all regions in a single file
 
 ## Examples
 
@@ -202,6 +306,24 @@ python list-resources.py \
 - `report_rds_db.csv` (all RDS databases from all regions)
 - ... (one file per resource type)
 
+### Example 6: Export with JSON Output
+
+Export resources to both CSV (by region) and JSON:
+
+```bash
+python list-resources.py \
+    --profile stav-devops \
+    --region eu-central-1 \
+    --query-regions us-east-1 us-east-2 \
+    --output-by-region \
+    --output-json
+```
+
+**Output**: 
+- `report_us_east_1.csv` (CSV for us-east-1)
+- `report_us_east_2.csv` (CSV for us-east-2)
+- `report.json` (JSON with all resources from all regions)
+
 ## Output Format
 
 ### CSV Structure
@@ -253,9 +375,11 @@ StreamSpecification, PointInTimeRecoverySpecification, ...
 ### Common Issues
 
 1. **TypeNotFoundException**
-   - Some resource types may not be supported by Cloud Control API
-   - These resources will be skipped with a warning message
-   - Check the logs for details
+   - Some resource types may not be supported by Cloud Control API, or a mapping may be missing
+   - These resources will be skipped with a warning message: `Type AWS::<Service>::<Resource> not found for resource`
+   - **Solution**: Add the missing mapping to `special_resource_group_name_mapping` in `config.py`
+   - Check the [Cloud Control API Supported Resources](https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html) documentation for the correct TypeName format
+   - See the "Resource Name Mappings" section in Configuration for detailed instructions
 
 2. **ThrottlingException**
    - AWS may throttle requests when processing many resources
@@ -273,9 +397,10 @@ StreamSpecification, PointInTimeRecoverySpecification, ...
 
 ## Limitations
 
-- **Cloud Control API Coverage**: Not all AWS resource types are supported by Cloud Control API. Unsupported types will be skipped.
-- **Rate Limits**: Cloud Control API has rate limits (~10 requests/second). Large inventories may take time to complete.
+- **Cloud Control API Coverage**: Not all AWS resource types are supported by Cloud Control API. Unsupported types will be skipped with a warning. Check the [supported resources documentation](https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html) for available types.
+- **Rate Limits**: Cloud Control API has rate limits (~10 requests/second). Large inventories may take time to complete. The script will log throttling errors but does not automatically retry.
 - **Global Services**: Global services (IAM, Route53, etc.) should be queried with `"global"` as the region in `--query-regions`.
+- **Resource Name Mappings**: Some resource types may require manual mapping configuration in `config.py` if they're not already included. Watch for WARNING messages about TypeNotFound to identify missing mappings.
 
 ## Files
 
