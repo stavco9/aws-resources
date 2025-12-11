@@ -114,7 +114,9 @@ class AWSAPI:
                 except client.exceptions.ResourceNotFoundException:
                     logger.warning(f"Resource {resource_id} not found for type {type_name}. Skipping...")
                 except client.exceptions.ThrottlingException:
-                    logger.error(f"Throttling exception for resource {resource_arn} !!!!!!!!!!!!!!!!!")
+                    logger.error(f"Throttling exception for resource {resource_arn} !!!")
+                except Exception as e:
+                    logger.error(f"Error for resource {resource_arn}: {e} !!!")
             else:
                 logger.debug(f"Resource of type {resource_type} is ignored. Skipping...")
 
@@ -123,6 +125,16 @@ class AWSAPI:
     def to_json(self, report: list[dict]):
         with open('report.json', 'w') as f:
             json.dump(report, f, indent=4)
+
+    def to_csv_by_resource_type_and_region(self, report: list[dict]):
+        split_by_resource_type_and_region = collections.defaultdict(list)
+        for resource in report:
+            split_by_resource_type_and_region[f"{resource.get('ResourceType')}_{resource.get('Region')}"].append(resource)
+
+        for resource_type_and_region, resources in split_by_resource_type_and_region.items():
+            output_filename = f'report_{resource_type_and_region.replace(":", "_").replace("/", "_").replace("-", "_")}.csv'
+            
+            self.to_csv(resources, output_filename)
 
     def to_csv_by_resource_type(self, report: list[dict]):
         split_by_resource_type = collections.defaultdict(list)
@@ -155,7 +167,7 @@ class AWSAPI:
             dict_writer.writeheader()
             dict_writer.writerows(report)
 
-def main(profile: str, region: str, query_regions: Optional[list[str]], log_level: str):
+def main(profile: str, region: str, query_regions: Optional[list[str]], log_level: str, output_by_region: bool, output_by_resource_type: bool):
 
     logger.set_level(log_level.upper())
     logger.info(f"Log level set to: {logger.get_level_name()}")
@@ -181,10 +193,14 @@ def main(profile: str, region: str, query_regions: Optional[list[str]], log_leve
         aws_regional_api = AWSAPI(profile, resource_region)
         resource_details.extend(aws_regional_api.list_resource_details(resources))
         
-    aws_api.to_json(resource_details)
-    #aws_api.to_csv_all_services(resource_details)
-    aws_api.to_csv_by_resource_type(resource_details)
-    aws_api.to_csv_by_region(resource_details)
+    if output_by_resource_type and output_by_region:
+        aws_api.to_csv_by_resource_type_and_region(resource_details)
+    elif output_by_resource_type:
+        aws_api.to_csv_by_resource_type(resource_details)
+    elif output_by_region:
+        aws_api.to_csv_by_region(resource_details)
+    else:
+        aws_api.to_csv_all_services(resource_details)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description ='Please provide aws profile name and region.')
@@ -192,6 +208,8 @@ if __name__ == "__main__":
     parser.add_argument('--region', type = str, required=True, help ='The AWS Region where the resource explorer api is the aggregator. Please go to https://resource-explorer.console.aws.amazon.com/resource-explorer/home to check the aggregator region.')
     parser.add_argument('--query-regions', nargs="*", type = str, required=False, help ='Space separated list of AWS Regions to query. For example: --query-regions "eu-central-1 us-east-1". For Global services (e.g. IAM, Route53) please specify "global".')
     parser.add_argument('--log-level', type = str, required=False, help ='The log level. For example: --log-level "DEBUG".', default='INFO')
+    parser.add_argument('--output-by-region', action='store_true', required=False, help ='Output the report by region.')
+    parser.add_argument('--output-by-resource-type', action='store_true', required=False, help ='Output the report by resource type.')
     args = parser.parse_args()
 
-    main(args.profile, args.region, args.query_regions, args.log_level)
+    main(args.profile, args.region, args.query_regions, args.log_level, args.output_by_region, args.output_by_resource_type)
