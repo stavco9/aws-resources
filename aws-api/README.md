@@ -6,10 +6,10 @@ A Python script that discovers and exports detailed information about all AWS re
 
 This script provides a comprehensive inventory of your AWS resources by:
 1. **Discovering resources** using AWS Resource Explorer across specified regions
-2. **Fetching detailed properties** for each resource using AWS Cloud Control API
-3. **Exporting to CSV** with flexible grouping options (by region, by resource type, or both)
+2. **Fetching detailed properties** for each resource type using AWS Cloud Control API's `list_resources` method (efficient bulk retrieval - much faster than individual resource queries)
+3. **Exporting to CSV or JSON** with flexible grouping options (by region, by resource type, or both)
 
-The CSV output includes all properties and details about each resource, such as:
+The output includes all properties and details about each resource, such as:
 - **EC2 Instances**: Instance type, AMI ID, VPC ID, Subnet ID, Security Groups, IAM Role, State, Launch Time, Tags, etc.
 - **S3 Buckets**: Bucket name, Creation date, Versioning status, Encryption settings, Public access settings, Lifecycle rules, etc.
 - **RDS Databases**: DB instance class, Engine version, Multi-AZ status, Storage type, Backup retention, Endpoint, etc.
@@ -138,52 +138,12 @@ service_to_resource_group_name_mapping = {
 }
 ```
 
-### Resource Identifier Configuration
-
-The script extracts resource identifiers from ARNs differently based on service requirements:
-
-#### Default Behavior
-By default, the script extracts the resource ID from the ARN after the last slash (`/`):
-- ARN: `arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0`
-- Resource ID: `i-1234567890abcdef0`
-
-#### Services Requiring Full ARN
-Some services require the **full ARN** as the identifier. These are configured in `services_keep_service_arn`:
-
-```python
-services_keep_service_arn = [
-    'ElasticLoadBalancingV2',  # ALB/NLB require full ARN
-    'SecretsManager',           # Secrets require full ARN
-    'AppRunner',                # App Runner services require full ARN
-    'CE'                        # Cost Explorer resources require full ARN
-]
-```
-
-#### Services with Different ARN Structure
-Some services don't use the standard `arn:partition:service:region:account-id:resource-type/resource-id` format. Instead, they use:
-- `arn:partition:service:region:account-id:resource-type:resource-id` (colon separator)
-- `arn:partition:service:region:account-id:resource-id` (no resource type)
-
-These are configured in `services_not_split_by_slash`:
-
-```python
-services_not_split_by_slash = [
-    'RDS',          # Uses format: arn:aws:rds:region:account-id:db:db-instance-id
-    'S3',           # Uses format: arn:aws:s3:::bucket-name
-    'SQS',          # Uses format: arn:aws:sqs:region:account-id:queue-name
-    'ElastiCache',  # Uses colon-separated format
-    'Logs'          # CloudWatch Logs uses colon-separated format
-]
-```
-
-For these services, the resource ID is extracted from the part after the last colon (`:`) instead of the last slash.
-
 ## Usage
 
 ### Basic Syntax
 
 ```bash
-python list-resources.py --region <aggregator-region> [OPTIONS]
+python list-resources.py --region <aggregator-region> --output-format <csv|json> [OPTIONS]
 ```
 
 ### Parameters
@@ -194,38 +154,40 @@ python list-resources.py --region <aggregator-region> [OPTIONS]
 | `--profile` | string | No | AWS profile name. If not specified, the default profile will be used |
 | `--query-regions` | list | No | Space-separated list of AWS regions to query. For global services (IAM, Route53, etc.), specify `"global"`. Defaults to the `--region` value if not specified |
 | `--log-level` | string | No | Log level: `INFO` (default), `DEBUG`, `WARNING`, or `ERROR` |
-| `--output-by-region` | flag | No | Export one CSV file per region |
-| `--output-by-resource-type` | flag | No | Export one CSV file per resource type |
-| `--output-json` | flag | No | Export report in JSON format (in addition to CSV) |
+| `--output-format` | string | **Yes** | Output format: `csv` or `json` |
+| `--output-by-region` | flag | No | Export one file per region |
+| `--output-by-resource-type` | flag | No | Export one file per resource type |
 
 ### Output Options
 
-The script supports flexible output grouping:
+The script supports flexible output grouping and format selection:
 
-#### CSV Output Modes
+#### Output Format
 
-- **No flags**: Single CSV file (`report.csv`) with all resources from all regions
-- `--output-by-region`: One CSV file per region (e.g., `report_eu_central_1.csv`, `report_us_east_1.csv`)
-  - When combined with `--output-by-resource-type`: One CSV file per region AND resource type (e.g., `report_ec2_instance_eu_central_1.csv`)
-  - When used alone: One CSV file per region with all resource types combined
-- `--output-by-resource-type`: One CSV file per resource type (e.g., `report_ec2_instance.csv`, `report_s3_bucket.csv`)
-  - When used alone: One CSV file per resource type with all regions combined
-  - When combined with `--output-by-region`: One CSV file per region AND resource type
+You must specify the output format using `--output-format`:
+- `csv`: Export as CSV files
+- `json`: Export as JSON files
 
-#### JSON Output
+#### Output Grouping
 
-- `--output-json`: Exports a single JSON file (`report.json`) containing all resources from all regions, regardless of other output options
-  - This is in addition to CSV output (if any CSV flags are specified)
-  - If no CSV flags are specified, only JSON will be exported
+- **No grouping flags**: Single file with all resources from all regions
+  - CSV: `report_all_regions.csv`
+  - JSON: `report_all_regions.json`
+- `--output-by-region`: One file per region (e.g., `report_eu_central_1.csv`, `report_us_east_1.json`)
+  - When combined with `--output-by-resource-type`: One file per region AND resource type (e.g., `report_ec2_instance_eu_central_1.csv`)
+  - When used alone: One file per region with all resource types combined
+- `--output-by-resource-type`: One file per resource type (e.g., `report_ec2_instance.csv`, `report_s3_bucket.json`)
+  - When used alone: One file per resource type with all regions combined
+  - When combined with `--output-by-region`: One file per region AND resource type
 
 **Important Notes:**
 - When `--output-by-region` is used, files are generated per region as resources are processed
 - When `--output-by-region` is NOT used, all regions are combined into a single output
-- JSON output always contains all resources from all regions in a single file
+- The script uses Cloud Control API's `list_resources` method for efficient bulk retrieval of all resources of each type
 
 ## Examples
 
-### Example 1: Per-Region Report
+### Example 1: Per-Region Report (CSV)
 
 Export resources grouped by region for multiple regions:
 
@@ -234,6 +196,7 @@ python list-resources.py \
     --profile stav-devops \
     --region eu-central-1 \
     --query-regions eu-central-1 us-east-1 global \
+    --output-format csv \
     --output-by-region
 ```
 
@@ -242,7 +205,7 @@ python list-resources.py \
 - `report_us_east_1.csv`
 - `report_global.csv`
 
-### Example 2: Per-Region-Per-Resource-Type Report
+### Example 2: Per-Region-Per-Resource-Type Report (CSV)
 
 Export resources grouped by both region and resource type:
 
@@ -251,6 +214,7 @@ python list-resources.py \
     --profile stav-devops \
     --region eu-central-1 \
     --query-regions us-east-1 \
+    --output-format csv \
     --output-by-region \
     --output-by-resource-type
 ```
@@ -261,7 +225,7 @@ python list-resources.py \
 - `report_rds_db_us_east_1.csv`
 - ... (one file per resource type per region)
 
-### Example 3: Debug Mode with Per-Region Report
+### Example 3: Debug Mode with Per-Region Report (CSV)
 
 Run with DEBUG log level to see detailed information:
 
@@ -270,11 +234,12 @@ python list-resources.py \
     --profile stav-devops \
     --region eu-central-1 \
     --query-regions us-east-1 \
+    --output-format csv \
     --output-by-region \
     --log-level DEBUG
 ```
 
-### Example 4: Single Combined Report
+### Example 4: Single Combined Report (CSV)
 
 Export all resources from multiple regions into a single CSV file:
 
@@ -282,13 +247,14 @@ Export all resources from multiple regions into a single CSV file:
 python list-resources.py \
     --profile stav-devops \
     --region eu-central-1 \
-    --query-regions us-east-1 us-east-2 global eu-central-1
+    --query-regions us-east-1 us-east-2 global eu-central-1 \
+    --output-format csv
 ```
 
 **Output**: 
-- `report.csv` (contains all resources from all specified regions)
+- `report_all_regions.csv` (contains all resources from all specified regions)
 
-### Example 5: Per-Resource-Type Report (All Regions Combined)
+### Example 5: Per-Resource-Type Report (All Regions Combined - CSV)
 
 Export resources grouped by type across all regions:
 
@@ -297,32 +263,50 @@ python list-resources.py \
     --profile stav-devops \
     --region eu-central-1 \
     --query-regions us-east-1 us-east-2 eu-central-1 \
+    --output-format csv \
     --output-by-resource-type
 ```
 
 **Output**: 
-- `report_ec2_instance.csv` (all EC2 instances from all regions)
-- `report_s3_bucket.csv` (all S3 buckets from all regions)
-- `report_rds_db.csv` (all RDS databases from all regions)
+- `report_ec2_instance_all_regions.csv` (all EC2 instances from all regions)
+- `report_s3_bucket_all_regions.csv` (all S3 buckets from all regions)
+- `report_rds_db_all_regions.csv` (all RDS databases from all regions)
 - ... (one file per resource type)
 
-### Example 6: Export with JSON Output
+### Example 6: JSON Output by Region
 
-Export resources to both CSV (by region) and JSON:
+Export resources to JSON format, grouped by region:
 
 ```bash
 python list-resources.py \
     --profile stav-devops \
     --region eu-central-1 \
     --query-regions us-east-1 us-east-2 \
-    --output-by-region \
-    --output-json
+    --output-format json \
+    --output-by-region
 ```
 
 **Output**: 
-- `report_us_east_1.csv` (CSV for us-east-1)
-- `report_us_east_2.csv` (CSV for us-east-2)
-- `report.json` (JSON with all resources from all regions)
+- `report_us_east_1.json` (JSON for us-east-1)
+- `report_us_east_2.json` (JSON for us-east-2)
+
+### Example 7: JSON Output by Resource Type
+
+Export resources to JSON format, grouped by resource type:
+
+```bash
+python list-resources.py \
+    --profile stav-devops \
+    --region eu-central-1 \
+    --query-regions us-east-1 us-east-2 \
+    --output-format json \
+    --output-by-resource-type
+```
+
+**Output**: 
+- `report_ec2_instance_all_regions.json` (all EC2 instances from all regions)
+- `report_s3_bucket_all_regions.json` (all S3 buckets from all regions)
+- ... (one JSON file per resource type)
 
 ## Output Format
 
@@ -330,13 +314,12 @@ python list-resources.py \
 
 Each CSV file contains:
 - **Standard metadata columns** (present in all resources):
-  - `Arn`: Full AWS Resource Name
+  - `Identifier`: Resource identifier from Cloud Control API
   - `ResourceType`: Resource type (e.g., `ec2:instance`, `s3:bucket`)
   - `Region`: AWS region where the resource exists
   - `AccountId`: AWS account ID
   - `Service`: Service name (e.g., `EC2`, `S3`)
   - `ResourceGroup`: Resource group name (e.g., `Instance`, `Bucket`)
-  - `Identifier`: Resource identifier used by Cloud Control API
 
 - **Resource-specific properties**: All properties returned by Cloud Control API for that resource type
 
@@ -344,31 +327,38 @@ Each CSV file contains:
 
 #### EC2 Instance
 ```
-Arn, ResourceType, Region, AccountId, Service, ResourceGroup, Identifier,
+Identifier, ResourceType, Region, AccountId, Service, ResourceGroup,
 InstanceId, InstanceType, ImageId, VpcId, SubnetId, SecurityGroupIds,
 IamInstanceProfile, State, LaunchTime, Tags, KeyName, ...
 ```
 
 #### S3 Bucket
 ```
-Arn, ResourceType, Region, AccountId, Service, ResourceGroup, Identifier,
+Identifier, ResourceType, Region, AccountId, Service, ResourceGroup,
 BucketName, CreationDate, VersioningConfiguration, PublicAccessBlockConfiguration,
 Encryption, LifecycleConfiguration, NotificationConfiguration, ...
 ```
 
 #### RDS Database
 ```
-Arn, ResourceType, Region, AccountId, Service, ResourceGroup, Identifier,
+Identifier, ResourceType, Region, AccountId, Service, ResourceGroup,
 DBInstanceIdentifier, DBInstanceClass, Engine, EngineVersion, MultiAZ,
 StorageType, AllocatedStorage, Endpoint, BackupRetentionPeriod, ...
 ```
 
 #### DynamoDB Table
 ```
-Arn, ResourceType, Region, AccountId, Service, ResourceGroup, Identifier,
+Identifier, ResourceType, Region, AccountId, Service, ResourceGroup,
 TableName, BillingMode, AttributeDefinitions, KeySchema, ProvisionedThroughput,
 StreamSpecification, PointInTimeRecoverySpecification, ...
 ```
+
+### JSON Structure
+
+JSON files contain an array of resource objects, where each object includes:
+- The same standard metadata fields as CSV
+- All resource-specific properties as nested JSON objects/arrays
+- Properly typed values (numbers, booleans, arrays, objects) instead of CSV string representations
 
 ## Troubleshooting
 
@@ -401,6 +391,7 @@ StreamSpecification, PointInTimeRecoverySpecification, ...
 - **Rate Limits**: Cloud Control API has rate limits (~10 requests/second). Large inventories may take time to complete. The script will log throttling errors but does not automatically retry.
 - **Global Services**: Global services (IAM, Route53, etc.) should be queried with `"global"` as the region in `--query-regions`.
 - **Resource Name Mappings**: Some resource types may require manual mapping configuration in `config.py` if they're not already included. Watch for WARNING messages about TypeNotFound to identify missing mappings.
+- **Bulk Retrieval**: The script uses `list_resources` API which retrieves all resources of a type at once. This is more efficient than individual `get_resource` calls, but means you cannot filter resources before retrieval.
 
 ## Files
 

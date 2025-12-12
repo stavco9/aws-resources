@@ -44,14 +44,6 @@ special_resource_group_name_mapping = {
     'dhcp-options': 'DHCPOptions'
 }
 
-services_keep_service_arn = [
-    'ElasticLoadBalancingV2', 'SecretsManager', 'AppRunner', 'CE'
-]
-
-services_not_split_by_slash = [
-    'RDS', 'S3', 'SQS', 'ElastiCache', 'Logs'
-]
-
 service_to_resource_group_name_mapping = {
     'S3': 'Bucket',
     'SQS': 'Queue'
@@ -59,10 +51,10 @@ service_to_resource_group_name_mapping = {
 
 blacklist_resource_types = [
     'acm:certificate',
-    'ec2:elastic-ip',
     'iam:policy',
-    'ec2:network-interface',
-    'ec2:security-group-rule'
+    'ec2:security-group-rule',
+    'elasticloadbalancing:listener/net',
+    'elasticloadbalancing:listener/app'
 ]
 
 whitelist_resource_types = ["*"]
