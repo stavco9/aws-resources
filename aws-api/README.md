@@ -371,38 +371,23 @@ JSON files contain an array of resource objects, where each object includes:
    - Check the [Cloud Control API Supported Resources](https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html) documentation for the correct TypeName format
    - See the "Resource Name Mappings" section in Configuration for detailed instructions
 
-2. **ThrottlingException**
-   - AWS may throttle requests when processing many resources
-   - The script will log errors for throttled resources
-   - Consider running during off-peak hours or processing smaller batches
-
-3. **Resource Explorer Not Indexed**
+2. **Resource Explorer Not Indexed**
    - Ensure Resource Explorer is enabled and indexing is complete
    - Check the Resource Explorer console for indexing status
    - Wait for indexing to complete before running the script
 
-4. **Incorrect Aggregator Region**
+3. **Incorrect Aggregator Region**
    - Verify the aggregator region in the Resource Explorer console
    - Use the correct region for the `--region` parameter
 
 ## Limitations
 
 - **Cloud Control API Coverage**: Not all AWS resource types are supported by Cloud Control API. Unsupported types will be skipped with a warning. Check the [supported resources documentation](https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html) for available types.
-- **Rate Limits**: Cloud Control API has rate limits (~10 requests/second). Large inventories may take time to complete. The script will log throttling errors but does not automatically retry.
 - **Global Services**: Global services (IAM, Route53, etc.) should be queried with `"global"` as the region in `--query-regions`.
 - **Resource Name Mappings**: Some resource types may require manual mapping configuration in `config.py` if they're not already included. Watch for WARNING messages about TypeNotFound to identify missing mappings.
-- **Bulk Retrieval**: The script uses `list_resources` API which retrieves all resources of a type at once. This is more efficient than individual `get_resource` calls, but means you cannot filter resources before retrieval.
 
 ## Files
 
 - `list-resources.py`: Main script
 - `config.py`: Configuration file for whitelist/blacklist and resource type mappings
 - `logger.py`: Logging configuration
-
-## License
-
-[Add your license information here]
-
-## Contributing
-
-[Add contribution guidelines if applicable]

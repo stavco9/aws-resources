@@ -17,6 +17,6 @@ terraform {
 
 # Configure the AWS Provider
 provider "aws" {
-  profile = "stav-devops"
-  region  = "eu-central-1"
+  profile = var.profile
+  region  = var.region
 }

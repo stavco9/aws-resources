@@ -1,15 +1,15 @@
 module "networking" {
   source = "../../../../modules/networking"
 
-  vpc_cidr = "10.0.10.0/23"
+  vpc_cidr = var.vpc_cidr
 
-  project         = "365scores-devops"
-  owner           = "stavco9@gmail.com"
-  environment     = "dev"
-  private_subnets = ["10.0.10.0/26", "10.0.10.64/26", "10.0.10.128/26"]
-  public_subnets  = ["10.0.11.0/26", "10.0.11.64/26", "10.0.11.128/26"]
+  project         = var.project
+  owner           = var.owner
+  environment     = var.environment
+  private_subnets = var.private_subnets
+  public_subnets  = var.public_subnets
 
-  single_nat_gateway = true
-  enable_nat_gateway = true
-  enable_s3_endpoint = true
+  single_nat_gateway = var.single_nat_gateway
+  enable_nat_gateway = var.enable_nat_gateway
+  enable_s3_endpoint = var.enable_s3_endpoint
 }
