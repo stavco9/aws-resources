@@ -64,18 +64,6 @@ class AWSAPI:
             return self.service_to_resource_group_name_mapping.get(resource_service)
         
         return self.to_camel_case(resource_group_name_in_arn)
-    
-    # Get the resource id from the ARN.
-    # For some services, the resource id is the same as the ARN.
-    # For others, it is the last part of the ARN after the last colon or slash.
-    def get_resource_id(self, resource_service: str, resource_arn: str):
-        if resource_service in self.services_keep_service_arn:
-            return resource_arn
-
-        if resource_service in self.services_not_split_by_slash:
-            return resource_arn.split(':')[-1]
-
-        return resource_arn.split('/')[-1]
 
     # Build a response object from the Cloud Control API response.
     def build_response_object(self, response: list[dict], resource_type: str, resource_region: str, resource_account_id: str, resource_service: str, resource_group: str):
@@ -279,15 +267,17 @@ def main(profile: str, region: str, query_regions: Optional[list[str]], log_leve
         resource_details_regional = aws_regional_api.list_resource_details(resources)
         logger.info(f"Found {len(resource_details_regional)} resource types in region: {resource_region}")
 
+        # Convert the region name to a key for the resource details dictionary.
+        resource_region_key = resource_region.replace("-", "_")
+
         if output_by_region:
             if output_by_resource_type:
                 logger.info(f"Outputting report by resource type for region: {resource_region}")
-                aws_api.export_by_resource_type(report=resource_details_regional, region=resource_region)
+                aws_api.export_by_resource_type(report=resource_details_regional, region=resource_region_key)
             else:
                 logger.info(f"Outputting report by all services for region: {resource_region}")
-                aws_api.export_all_resource_types(report=resource_details_regional, region=resource_region)
+                aws_api.export_all_resource_types(report=resource_details_regional, region=resource_region_key)
         
-        resource_region_key = resource_region.replace("-", "_")
         resource_details_all_regions[resource_region_key] = resource_details_regional
 
     if not output_by_region:
