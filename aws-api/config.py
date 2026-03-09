@@ -72,7 +72,7 @@ special_resource_group_name_mapping = {
     'apprunner': 'AppRunner',
     'autoscalingconfiguration': 'AutoScalingConfiguration',
     'dynamodb': 'DynamoDB',
-    'db': 'DBInstance',
+    'db': 'DBCluster',
     'workgroup': 'WorkGroup',
     'firehose': 'KinesisFirehose',
     'deliverystream': 'DeliveryStream',
