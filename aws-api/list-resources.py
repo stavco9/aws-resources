@@ -37,11 +37,15 @@ class AWSAPI:
         response = client.list_resources(Filters={'FilterString': filter_string})
         next_token = response.get('NextToken')
         
+        logger.debug(f"Next token: {next_token}")
+
         # Continue listing resources until there are no more resources to list.
         while next_token is not None and next_token != '':
             list_resources.extend(response.get('Resources'))
-            response = client.list_resources(NextToken=next_token)
+            response = client.list_resources(Filters={'FilterString': filter_string}, NextToken=next_token)
             next_token = response.get('NextToken')
+            logger.debug(f"Next token: {next_token}")
+
         list_resources.extend(response.get('Resources'))
         
         return list_resources
@@ -99,7 +103,13 @@ class AWSAPI:
 
             # Check if the resource type is whitelisted or blacklisted.
             is_whitelisted = len(self.whitelist_resource_types) == 0 or "*" in self.whitelist_resource_types or resource_type in self.whitelist_resource_types
-            is_blacklisted = resource_type in self.blacklist_resource_types
+            is_blacklisted = False
+            for blacklist_type in self.blacklist_resource_types:
+                if resource_type == blacklist_type or (
+                    resource_type.split(':')[0] == blacklist_type.split(':')[0] and blacklist_type.split(':')[1] == '*'
+                ):
+                    is_blacklisted = True
+                    break
             
             if not is_whitelisted or is_blacklisted:
                 logger.debug(f"Resource type {resource_type} is ignored because it is either whitelisted or blacklisted. Skipping...")
@@ -150,7 +160,7 @@ class AWSAPI:
                 ))
 
             except client.exceptions.TypeNotFoundException:
-                logger.warning(f"Type {type_name} not found for resource. Skipping...")
+                logger.warning(f"Tried to parse resource type for arn {resource_arn} but type {type_name} not found. Skipping...")
                 del resource_details[resource_type_key]
             except Exception as e:
                 logger.error(f"Error for resource type {resource_type}: {e} !!!")
@@ -205,6 +215,9 @@ class AWSAPI:
             self.to_json(report_resources, f'report_{region}.json')
 
     def to_csv(self, report: list[dict], filename: str):
+        if not report:
+            logger.warning(f"No resources found. No CSV file will be created: {filename}")
+            return
         keys = reduce(lambda x, y: x.union(y), [set[str](row.keys()) for row in report])
         
         logger.info(f"Report will be output to file: {filename}")
